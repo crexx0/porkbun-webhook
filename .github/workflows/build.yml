@@ -8,9 +8,8 @@ on:
     branches: [ main ]
 
 env:
-  REGISTRY_USER: ${{ github.actor }}
-  REGISTRY_PASSWORD: ${{ github.token }}
-  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
@@ -18,29 +17,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-    - name: Docker meta
+    - name: Log in to the Container registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata (tags, labels) for Docker
       id: meta
-      uses: docker/metadata-action@v4
+      uses: docker/metadata-action@v5
       with:
-        images: ${{ env.IMAGE_REGISTRY }}/porkbun-webhook
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
-    - name: Build image
-      id: build-image
-      uses: redhat-actions/buildah-build@v2
+    - name: Build and push Docker image
+      id: push
+      uses: docker/build-push-action@v5
       with:
-        archs: amd64,arm64
-        image: porkbun-webhook
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        containerfiles: |
-          ./Dockerfile
 
-    - name: Push image
-      if: github.event_name != 'pull_request'
-      uses: redhat-actions/push-to-registry@v2
+    - name: Generate artifact attestation
+      uses: actions/attest-build-provenance@v1
       with:
-        tags: ${{ steps.build-image.outputs.tags }}
-        username: ${{ env.REGISTRY_USER }}
-        password: ${{ env.REGISTRY_PASSWORD }}
+        subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
+        subject-digest: ${{ steps.push.outputs.digest }}
+        push-to-registry: true
